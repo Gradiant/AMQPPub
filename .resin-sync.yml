@@ -1,0 +1,5 @@
+local_resinos:
+  app-name: rabbitpub
+  build-triggers:
+    - Dockerfile: 8ef6a751a13dd8e11c482426cfc8832b3ee963e92ddc5655fd8d265d2a1817fe
+  environment: []
