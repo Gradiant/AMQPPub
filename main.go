@@ -9,22 +9,24 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/go-redis/redis"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/streadway/amqp"
 )
 
 var (
-	uri               = flag.String("uri", "", "AMQP URI (Mandatory). Eg.: guest:guest@localhost:5672/vhost ")
-	redisServer       = flag.String("redisServer", "", "Redis server URI (Mandatory). Eg: 192.168.1.1:6379")
-	reliable          = flag.Bool("reliable", true, "Wait for the publisher confirmation before exiting")
-	cacertpath        = flag.String("cacert", "", "Path to the Root CA certificate")
-	clcertpath        = flag.String("clcert", "", "Path to the client certificate")
-	clkeypath         = flag.String("clkey", "", "Path to the client key")
-	pubConnChannel    = flag.String("connChannel", "", "Redis channel used to publish connection status changes (Mandatory). Eg: publisher:conn")
-	subDataChannel    = flag.String("dataChannel", "", "Redis channel used to subscribe to data other services want to publish (Mandatory). Eg: publisher:data")
-	pubStorageChannel = flag.String("storageChannel", "", "Redis channel used to subscribe to data other services want to publish (Mandatory). Eg: publisher:data")
+	uri             = flag.String("uri", "", "AMQP URI (Mandatory). Eg.: guest:guest@localhost:5672/vhost ")
+	mqttBroker      = flag.String("mqttBroker", "", "MQTT broker URI (Mandatory). Eg: 192.168.1.1:1883")
+	reliable        = flag.Bool("reliable", true, "Wait for the publisher confirmation before exiting")
+	cacertpath      = flag.String("cacert", "", "Path to the Root CA certificate")
+	clcertpath      = flag.String("clcert", "", "Path to the client certificate")
+	clkeypath       = flag.String("clkey", "", "Path to the client key")
+	pubConnTopic    = flag.String("connTopic", "", "MQTT topic used to publish connection status changes (Mandatory). Eg: publisher/conn")
+	subDataTopic    = flag.String("dataTopic", "", "MQTT topic used to subscribe to data other services want to publish (Mandatory). Eg: publisher/data")
+	pubStorageTopic = flag.String("storageTopic", "", "MQTT topic used to subscribe to data other services want to publish (Mandatory). Eg: storage/data")
 )
 
 var (
@@ -44,23 +46,20 @@ func init() {
 	flag.Parse()
 }
 
-func connectRedis() *redis.Client {
+func connectMQTT() (mqtt.Client, error) {
 
-	// Connect to Redis
-	client := redis.NewClient(&redis.Options{
-		Addr: *redisServer,
-	})
+	opts := mqtt.NewClientOptions().AddBroker("tcp://" + *mqttBroker)
 
-	// Check connection with Redis is OK
-	err := client.Ping().Err()
-	if err != nil {
-		log.Fatalf("Cannot connect to Redis: %s", err)
+	client := mqtt.NewClient(opts)
+
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		return nil, fmt.Errorf("Error connecting to MQTT broker: %s", token.Error())
 	}
 
-	return client
+	return client, nil
 }
 
-func connectAMQP(client redis.Client) *amqp.Connection {
+func connectAMQP(client mqtt.Client) *amqp.Connection {
 
 	for {
 
@@ -82,7 +81,7 @@ func connectAMQP(client redis.Client) *amqp.Connection {
 
 }
 
-func connectAMQPWithTLS(client redis.Client) *amqp.Connection {
+func connectAMQPWithTLS(client mqtt.Client) *amqp.Connection {
 
 	cfg := new(tls.Config)
 	cfg.RootCAs = x509.NewCertPool()
@@ -125,7 +124,7 @@ func connectAMQPWithTLS(client redis.Client) *amqp.Connection {
 
 }
 
-func rabbitConnector(client redis.Client) {
+func rabbitConnector(client mqtt.Client) {
 	var rabbitErr *amqp.Error
 
 	for {
@@ -195,20 +194,23 @@ func confirmOne(confirms <-chan amqp.Confirmation) {
 	}
 }
 
-func notifyConnectionStatus(client redis.Client, connectionIsUp bool) {
+func notifyConnectionStatus(client mqtt.Client, connectionIsUp bool) {
 
-	err := client.Publish(*pubConnChannel, connectionIsUp).Err()
-	if err != nil {
-		log.Printf("Couldn't send connection notification")
+	var msg string = "0"
+	if connectionIsUp {
+		msg = "1"
+	}
+
+	if token := client.Publish(*pubConnTopic, 0, false, msg); token.Wait() && token.Error() != nil {
+		log.Printf("Error publishing message to MQTT broker: %s", token.Error())
 	}
 
 }
 
-func storeMessage(client redis.Client, msg string) {
+func storeMessage(client mqtt.Client, msg string) {
 
-	err := client.Publish(*pubStorageChannel, msg).Err()
-	if err != nil {
-		log.Printf("Couldn't store message. Dropping...")
+	if token := client.Publish(*pubStorageTopic, 0, false, msg); token.Wait() && token.Error() != nil {
+		log.Printf("Error publishing message to MQTT broker: %s", token.Error())
 	}
 
 }
@@ -233,16 +235,34 @@ func publishMessage(connection *amqp.Connection, msg string) error {
 	return nil
 }
 
+func mqttCallback(client mqtt.Client, msg mqtt.Message) {
+
+	log.Printf("TOPIC %s, MSG %s", msg.Topic(), msg.Payload())
+
+	err := publishMessage(rabbitConn, string(msg.Payload()))
+	if err != nil {
+		storeMessage(client, string(msg.Payload()))
+	}
+
+}
+
 //******* MAIN ********/
 func main() {
 
 	//Check if required arguments have been specified
-	if *uri == "" || *redisServer == "" || *pubStorageChannel == "" || *pubConnChannel == "" || *subDataChannel == "" {
+	if *uri == "" || *mqttBroker == "" || *pubStorageTopic == "" || *pubConnTopic == "" || *subDataTopic == "" {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
-	client := connectRedis()
+	//Channel used to block while receiving messages
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	clientMQTT, err := connectMQTT()
+	if err != nil {
+		log.Fatalf("Error connecting to MQTT broker: %s", err)
+	}
 
 	//Check if certificates are being passed to use TLS or not
 	if *cacertpath == "" || *clcertpath == "" || *clkeypath == "" {
@@ -252,26 +272,12 @@ func main() {
 	}
 
 	rabbitCloseError = make(chan *amqp.Error)
-	go rabbitConnector(*client)
+	go rabbitConnector(clientMQTT)
 	rabbitCloseError <- amqp.ErrClosed
 
-	pubsub := client.Subscribe(*subDataChannel)
-	defer pubsub.Close()
-
-	for {
-
-		msg, err := pubsub.ReceiveMessage()
-
-		if err != nil {
-			log.Printf("Error receiving message from subscription")
-		} else {
-			log.Printf("received: %s from %s", msg.Payload, msg.Channel)
-			err := publishMessage(rabbitConn, msg.Payload)
-			if err != nil {
-				storeMessage(*client, msg.Payload)
-			}
-		}
-
+	if token := clientMQTT.Subscribe(*subDataTopic, 0, mqttCallback); token.Wait() && token.Error() != nil {
+		log.Fatalf("Error subscribing to MQTT topic: %s", token.Error())
 	}
 
+	<-c
 }
