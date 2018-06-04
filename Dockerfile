@@ -6,5 +6,7 @@ RUN cd /src && go get -u github.com/eclipse/paho.mqtt.golang && go get -u github
 # Final stage
 FROM hypriot/rpi-alpine-scratch
 WORKDIR /app
+RUN mkdir /app/certs
+COPY certs/ /app/certs
 COPY --from=build-env /src/amqppub /app/
 ENTRYPOINT ["./amqppub"]

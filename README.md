@@ -40,6 +40,7 @@ Module that publishes through AMQP messages sent to it by other services
 ### How it works
 
 - If certificates and keys are provided the service tries to connect using TLS. Otherwise it connects without encryption.
+- When providing certificates for TLS connection make sure that you update the needed files in the certs folder before starting the image.
 - The service listens in dataTopic for messages to be published. The format of the message shall be in JSON as '{"exchange":"exc","key":"routing_key","payload":"payload_to_send"}'.
 - When the service detects a loss of connection it notifies it through connTopic by sending a '0'. It tries to reconnect to the other endpoint each 5 seconds.
 - When the connection is recovered a '1' is sent through connTopic.

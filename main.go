@@ -221,7 +221,7 @@ func publishMessage(connection *amqp.Connection, msg string) error {
 	err := json.Unmarshal([]byte(msg), &jsonMsg)
 
 	if err != nil || jsonMsg.Exchange == "" || jsonMsg.Key == "" || jsonMsg.Payload == "" {
-		log.Printf("Error parsing JSON")
+		log.Printf("Error parsing JSON: %s", err)
 	} else {
 
 		if connectionIsUp {
