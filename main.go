@@ -237,7 +237,7 @@ func publishMessage(connection *amqp.Connection, msg string) error {
 
 func mqttCallback(client mqtt.Client, msg mqtt.Message) {
 
-	log.Printf("TOPIC %s, MSG %s", msg.Topic(), msg.Payload())
+	log.Printf("Publishing message")
 
 	err := publishMessage(rabbitConn, string(msg.Payload()))
 	if err != nil {
