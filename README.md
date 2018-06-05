@@ -20,6 +20,7 @@ Module that publishes through AMQP messages sent to it by other services
 
 - MQTT client https://github.com/eclipse/paho.mqtt.golang
 - AMQP client: https://github.com/streadway/amqp
+- A MQTT broker like Mosquitto is needed to talk to other services
 
 ### Installation
 
