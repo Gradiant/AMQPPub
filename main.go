@@ -146,6 +146,8 @@ func rabbitConnector(client mqtt.Client) {
 
 func publish(connection *amqp.Connection, reliable bool, exchange string, routingKey string, body string) error {
 
+	var confirms chan amqp.Confirmation
+
 	channel, err := connection.Channel()
 	if err != nil {
 		return fmt.Errorf("Error getting channel: %s", err)
@@ -159,9 +161,7 @@ func publish(connection *amqp.Connection, reliable bool, exchange string, routin
 			return fmt.Errorf("Could not set channel into confirm mode: %s", err)
 		}
 
-		confirms := channel.NotifyPublish(make(chan amqp.Confirmation, 1))
-
-		defer confirmOne(confirms)
+		confirms = channel.NotifyPublish(make(chan amqp.Confirmation, 1))
 	}
 
 	if err = channel.Publish(
@@ -181,17 +181,14 @@ func publish(connection *amqp.Connection, reliable bool, exchange string, routin
 		return fmt.Errorf("Error publishing message: %s", err)
 	}
 
-	return nil
-}
-
-func confirmOne(confirms <-chan amqp.Confirmation) {
-	log.Printf("Waiting for confirmation of one publishing")
-
 	if confirmed := <-confirms; confirmed.Ack {
 		log.Printf("Confirmed delivery with delivery tag: %d", confirmed.DeliveryTag)
+		channel.Close()
 	} else {
 		log.Printf("Failed delivery of delivery tag: %d", confirmed.DeliveryTag)
 	}
+
+	return nil
 }
 
 func notifyConnectionStatus(client mqtt.Client, connectionIsUp bool) {
@@ -207,6 +204,7 @@ func notifyConnectionStatus(client mqtt.Client, connectionIsUp bool) {
 
 }
 
+//Sends a message to the storage service using the corresponding MQTT topic
 func storeMessage(client mqtt.Client, msg string) {
 
 	if token := client.Publish(*pubStorageTopic, 0, false, msg); token.Wait() && token.Error() != nil {
@@ -215,6 +213,7 @@ func storeMessage(client mqtt.Client, msg string) {
 
 }
 
+//Publish a message using AMQP
 func publishMessage(connection *amqp.Connection, msg string) error {
 
 	var jsonMsg Message
@@ -235,6 +234,7 @@ func publishMessage(connection *amqp.Connection, msg string) error {
 	return nil
 }
 
+//Callback called when a message arrives on the subscribed topic
 func mqttCallback(client mqtt.Client, msg mqtt.Message) {
 
 	log.Printf("Publishing message")
@@ -243,7 +243,6 @@ func mqttCallback(client mqtt.Client, msg mqtt.Message) {
 	if err != nil {
 		storeMessage(client, string(msg.Payload()))
 	}
-
 }
 
 //******* MAIN ********/
