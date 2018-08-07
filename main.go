@@ -248,6 +248,7 @@ func mqttCallback(client mqtt.Client, msg mqtt.Message) {
 //******* MAIN ********/
 func main() {
 
+	lal
 	//Check if required arguments have been specified
 	if *uri == "" || *mqttBroker == "" || *pubStorageTopic == "" || *pubConnTopic == "" || *subDataTopic == "" {
 		flag.PrintDefaults()
