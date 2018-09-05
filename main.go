@@ -155,7 +155,7 @@ func publish(connection *amqp.Connection, reliable bool, exchange string, routin
 
 	// Reliable publisher confirms require confirm.select support from the
 	// connection.
-	if reliable {
+	if relia {
 		log.Printf("Enabling publishing confirms")
 		if err := channel.Confirm(false); err != nil {
 			return fmt.Errorf("Could not set channel into confirm mode: %s", err)
