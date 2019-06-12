@@ -24,6 +24,8 @@ Module that publishes through AMQP messages sent to it by other services
 
 ### Installation
 
+- mkdir certs
+- Copy your certificates to the certs folder
 - sudo docker build -t amqppub .
 - sudo docker run --name amqppub -d amqppub -uri user:pwd@amqp:5672/vhost -mqttBroker=mqtt:1883 -storageTopic=storage/data -connTopic=publisher/conn -dataTopic=publisher/data -cacert=./cacert.pem -clcert=./cert.pem -clkey=./key.pem
 
