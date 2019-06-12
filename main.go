@@ -191,6 +191,7 @@ func publish(connection *amqp.Connection, reliable bool, exchange string, routin
 	return nil
 }
 
+//Notifies the status of the connection through MQTT. Sends 0 if disconnected, 1 if connected
 func notifyConnectionStatus(client mqtt.Client, connectionIsUp bool) {
 
 	var msg string = "0"
@@ -234,7 +235,7 @@ func publishMessage(connection *amqp.Connection, msg string) error {
 	return nil
 }
 
-//Callback called when a message arrives on the subscribed topic
+//Callback called when a message arrives on the subscribed MQTT topic
 func mqttCallback(client mqtt.Client, msg mqtt.Message) {
 
 	log.Printf("Publishing message")
